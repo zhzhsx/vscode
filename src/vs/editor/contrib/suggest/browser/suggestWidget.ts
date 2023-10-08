@@ -115,6 +115,7 @@ export class SuggestWidget implements IDisposable {
 	private _cappedHeight?: { wanted: number; capped: number };
 	private _forceRenderingAbove: boolean = false;
 	private _explainMode: boolean = false;
+	private _start: IPosition | null;
 
 	readonly element: ResizableHTMLElement;
 	private readonly _messageElement: HTMLElement;
@@ -159,6 +160,7 @@ export class SuggestWidget implements IDisposable {
 
 		this._contentWidget = new SuggestContentWidget(this, editor);
 		this._persistedSize = new PersistedWidgetSize(_storageService, editor);
+		this._start = null;
 
 		class ResizeState {
 			constructor(
@@ -524,7 +526,7 @@ export class SuggestWidget implements IDisposable {
 		if (this._state !== State.Hidden) {
 			return;
 		}
-		this._contentWidget.setPosition(this.editor.getPosition());
+		this._contentWidget.setPosition(this._start);
 		this._isAuto = !!auto;
 
 		if (!this._isAuto) {
@@ -533,8 +535,33 @@ export class SuggestWidget implements IDisposable {
 	}
 
 	showSuggestions(completionModel: CompletionModel, selectionIndex: number, isFrozen: boolean, isAuto: boolean, noFocus: boolean): void {
-
-		this._contentWidget.setPosition(this.editor.getPosition());
+		if (completionModel.items.length > 0) {
+			const item = completionModel.items[0];
+			const itemLabel = item.completion.label;
+			const labelText = typeof itemLabel === 'string' ? itemLabel : itemLabel.label;
+			const insertText = item.completion.insertText;
+			// console.info("itemLabel", itemLabel);
+			// console.info("insert", insertText);
+			// rust dbg(...) & dbg($0)
+			let shift = insertText.indexOf(labelText);
+			if (shift < 0) {
+				shift = 0;
+			}
+			// console.info("edit start", item.editStart.column);
+			let column = item.editStart.column + shift - 2;
+			if (column < 1) {
+				column = 1;
+			}
+			const model = this.editor.getModel();
+			if (model) {
+				const line = model.getLineContent(item.editStart.lineNumber);
+				while (column <= item.editStart.column && column - 1 < line.length && line.charAt(column - 1) === '\t') {
+					column = column + 1;
+				}
+			}
+			this._start = { lineNumber: item.editStart.lineNumber, column: column };
+		}
+		this._contentWidget.setPosition(this._start);
 		this._loadingTimeout?.dispose();
 
 		this._currentSuggestionDetails?.cancel();
