@@ -109,6 +109,7 @@ export class SuggestWidget implements IDisposable {
 	private readonly _loadingTimeout = new MutableDisposable();
 	private readonly _pendingLayout = new MutableDisposable();
 	private readonly _pendingShowDetails = new MutableDisposable();
+	private _textLeftOffset?: number;
 	private _currentSuggestionDetails?: CancelablePromise<void>;
 	private _focusedItem?: CompletionItem;
 	private _ignoreFocusEvents: boolean = false;
@@ -338,6 +339,34 @@ export class SuggestWidget implements IDisposable {
 		}
 	}
 
+	private _getWordStartPosition(): IPosition {
+		const position = this.editor.getPosition()!;
+		const model = this.editor.getModel();
+		if (model) {
+			const word = model.getWordUntilPosition(position);
+			return { lineNumber: position.lineNumber, column: word.startColumn };
+		}
+		return position;
+	}
+
+	private _getTextLeftOffset(): number {
+		if (this._textLeftOffset !== undefined) {
+			return this._textLeftOffset;
+		}
+		const widget = this.element.domNode;
+		const row = widget.querySelector('.monaco-list-row');
+		if (row) {
+			const leftEl = row.querySelector('.left');
+			if (leftEl) {
+				const widgetRect = widget.getBoundingClientRect();
+				const leftRect = leftEl.getBoundingClientRect();
+				this._textLeftOffset = leftRect.left - widgetRect.left;
+				return this._textLeftOffset;
+			}
+		}
+		return 0;
+	}
+
 	private _onCursorSelectionChanged(): void {
 		if (this._state !== State.Hidden) {
 			this._contentWidget.layout();
@@ -532,7 +561,7 @@ export class SuggestWidget implements IDisposable {
 		if (this._state !== State.Hidden) {
 			return;
 		}
-		this._contentWidget.setPosition(this.editor.getPosition());
+		this._contentWidget.setPosition(this._getWordStartPosition());
 		this._isAuto = !!auto;
 
 		if (!this._isAuto) {
@@ -542,7 +571,7 @@ export class SuggestWidget implements IDisposable {
 
 	showSuggestions(completionModel: CompletionModel, selectionIndex: number, isFrozen: boolean, isAuto: boolean, noFocus: boolean): void {
 
-		this._contentWidget.setPosition(this.editor.getPosition());
+		this._contentWidget.setPosition(this._getWordStartPosition());
 		this._loadingTimeout.clear();
 
 		this._currentSuggestionDetails?.cancel();
@@ -800,6 +829,7 @@ export class SuggestWidget implements IDisposable {
 			if (this._isDetailsVisible()) {
 				this._details.hide(); //todo@jrieken soft-hide
 			}
+			this.element.domNode.style.transform = '';
 			return;
 		}
 		if (this._state === State.Empty || this._state === State.Loading) {
@@ -810,6 +840,8 @@ export class SuggestWidget implements IDisposable {
 			this._details.show();
 		}
 		this._positionDetails();
+		const offset = this._getTextLeftOffset();
+		this.element.domNode.style.transform = `translateX(-${offset}px)`;
 	}
 
 	private _layout(size: dom.Dimension | undefined): void {
